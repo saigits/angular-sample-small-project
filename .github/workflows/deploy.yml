@@ -3,42 +3,39 @@ name: Deploy Angular App to Windows EC2 via IIS
 on:
   push:
     branches:
-      - main  # This will trigger the workflow when changes are pushed to the `main` branch
+      - main  # Trigger deployment only on pushes to main
 
 jobs:
   deploy:
-    runs-on: ubuntu-latest  # GitHub Actions uses Ubuntu to run workflows
-    
+    runs-on: ubuntu-latest
+
     steps:
       - name: Checkout code
-        uses: actions/checkout@v2  # Checks out the repository code
+        uses: actions/checkout@v2
 
       - name: Set up Node.js
         uses: actions/setup-node@v2
         with:
-          node-version: '18.x'  # Update to Node.js 18.x or higher
+          node-version: '18.x'
 
       - name: Install dependencies
-        run: npm install --legacy-peer-deps  # Use --legacy-peer-deps to bypass conflicts
+        run: npm install --legacy-peer-deps
 
       - name: Build Angular project
-        run: npm run build --prod  # Builds the Angular project for production
+        run: npm run build --prod
 
       - name: Deploy to EC2 (IIS)
         env:
-          PRIVATE_KEY: ${{ secrets.EC2_SSH_KEY }}  # GitHub Secrets: Private SSH Key
-          EC2_USER: Administrator  # EC2 username (Administrator in your case)
-          EC2_HOST: 65.1.248.103  # Replace with your EC2 instance's public IP
+          PRIVATE_KEY: ${{ secrets.EC2_SSH_KEY }}
+          EC2_USER: Administrator
+          EC2_HOST: 65.1.248.103
         run: |
-          # Save the private key to a file and set the correct permissions
+          # Save the private key and set permissions
           echo "$PRIVATE_KEY" > private_key.pem
           chmod 600 private_key.pem
 
-          # Copy the build files to the IIS directory on the EC2 instance
-          scp -v -o StrictHostKeyChecking=no -i private_key.pem -r dist/* $EC2_USER@$EC2_HOST:C:/inetpub/wwwroot/angular-app
+          # Transfer build files to Windows EC2 IIS directory
+          scp -v -o StrictHostKeyChecking=no -i private_key.pem -r dist/* $EC2_USER@$EC2_HOST:"C:/inetpub/wwwroot/angular-app"
 
-          # SSH into the EC2 instance and restart IIS
-          ssh -v -o StrictHostKeyChecking=no -i private_key.pem $EC2_USER@$EC2_HOST << 'EOF'
-            # Restart IIS to apply the changes
-            iisreset
-          EOF
+          # Remotely restart IIS using PowerShell
+          ssh -v -o StrictHostKeyChecking=no -i private_key.pem $EC2_USER@$EC2_HOST "powershell.exe -Command 'iisreset'"
