@@ -60,18 +60,5 @@ EOF
           done
 
           echo "Running remote commands on Windows EC2"
-          ssh -vvv -o StrictHostKeyChecking=no -i private_key.pem $EC2_USER@$EC2_HOST powershell.exe -Command "
-            Write-Output 'Starting deployment on remote server...';
-            \$timestamp = Get-Date -Format yyyyMMdd_HHmmss;
-            \$backupPath = 'C:\\inetpub\\wwwroot\\angular-app_backup_' + \$timestamp;
-            if (Test-Path 'C:\\inetpub\\wwwroot\\angular-app') {
-              Write-Output 'Backing up existing app to ' + \$backupPath;
-              Rename-Item 'C:\\inetpub\\wwwroot\\angular-app' \$backupPath
-            }
-            Write-Output 'Extracting new app...';
-            Expand-Archive -Path 'C:\\angular-app.zip' -DestinationPath 'C:\\inetpub\\wwwroot' -Force;
-            Remove-Item 'C:\\angular-app.zip';
-            Write-Output 'Restarting IIS...';
-            iisreset;
-            Write-Output 'Deployment complete.';
-          "
+          ssh -vvv -o StrictHostKeyChecking=no -i private_key.pem $EC2_USER@$EC2_HOST powershell.exe -NoProfile -Command @"
+            Write-Output '
