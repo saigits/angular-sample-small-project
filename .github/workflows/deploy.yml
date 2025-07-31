@@ -3,7 +3,7 @@ name: Deploy Angular App to Windows EC2 via IIS
 on:
   push:
     branches:
-      - main  # Deploy on push to the main branch
+      - main
 
 jobs:
   deploy:
@@ -27,13 +27,15 @@ jobs:
       - name: Detect build folder
         id: detect_build
         run: |
-          # Angular default output folder is dist/<project-name>
+          set -x
           BUILD_DIR=$(ls -d dist/* | head -n 1)
+          echo "Detected build folder: $BUILD_DIR"
           echo "BUILD_DIR=$BUILD_DIR" >> $GITHUB_OUTPUT
 
       - name: Zip build folder
         run: |
-          zip -r angular-app.zip ${{ steps.detect_build.outputs.BUILD_DIR }}
+          set -x
+          zip -r angular-app.zip "${{ steps.detect_build.outputs.BUILD_DIR }}"
 
       - name: Deploy to EC2 IIS with backup and restart
         env:
@@ -41,14 +43,15 @@ jobs:
           EC2_USER: Administrator
           EC2_HOST: 65.1.248.103
         run: |
+          set -x
           echo "$PRIVATE_KEY" > private_key.pem
           chmod 600 private_key.pem
 
-          # Retry upload via SFTP
+          echo "Uploading zip file via SFTP with retry"
           n=0
           until [ $n -ge 3 ]
           do
-            sftp -o BatchMode=yes -o StrictHostKeyChecking=no -i private_key.pem $EC2_USER@$EC2_HOST << EOF && break
+            sftp -vvv -o BatchMode=yes -o StrictHostKeyChecking=no -i private_key.pem $EC2_USER@$EC2_HOST << EOF && break
 put angular-app.zip C:/angular-app.zip
 EOF
             n=$((n+1))
@@ -56,14 +59,19 @@ EOF
             sleep 2
           done
 
-          # SSH to Windows EC2: backup old app, extract new app, cleanup, restart IIS
-          ssh -o StrictHostKeyChecking=no -i private_key.pem $EC2_USER@$EC2_HOST powershell.exe -Command "
+          echo "Running remote commands on Windows EC2"
+          ssh -vvv -o StrictHostKeyChecking=no -i private_key.pem $EC2_USER@$EC2_HOST powershell.exe -Command "
+            Write-Output 'Starting deployment on remote server...';
             \$timestamp = Get-Date -Format yyyyMMdd_HHmmss;
             \$backupPath = 'C:\\inetpub\\wwwroot\\angular-app_backup_' + \$timestamp;
             if (Test-Path 'C:\\inetpub\\wwwroot\\angular-app') {
+              Write-Output 'Backing up existing app to ' + \$backupPath;
               Rename-Item 'C:\\inetpub\\wwwroot\\angular-app' \$backupPath
             }
+            Write-Output 'Extracting new app...';
             Expand-Archive -Path 'C:\\angular-app.zip' -DestinationPath 'C:\\inetpub\\wwwroot' -Force;
             Remove-Item 'C:\\angular-app.zip';
+            Write-Output 'Restarting IIS...';
             iisreset;
+            Write-Output 'Deployment complete.';
           "
