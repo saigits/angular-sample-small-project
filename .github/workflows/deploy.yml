@@ -3,7 +3,7 @@ name: Deploy Angular App to Windows EC2 via IIS
 on:
   push:
     branches:
-      - main  # Deploy on push to main branch
+      - main  # Deploy on push to the main branch
 
 jobs:
   deploy:
