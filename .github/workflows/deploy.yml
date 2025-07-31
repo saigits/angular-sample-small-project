@@ -3,7 +3,7 @@ name: Deploy Angular App to Windows EC2 via IIS
 on:
   push:
     branches:
-      - main  # Trigger deployment only on pushes to main
+      - main  # Triggers deployment on push to main branch
 
 jobs:
   deploy:
@@ -24,18 +24,32 @@ jobs:
       - name: Build Angular project
         run: npm run build --prod
 
-      - name: Deploy to EC2 (IIS)
+      - name: Deploy to EC2 (Windows + IIS)
         env:
           PRIVATE_KEY: ${{ secrets.EC2_SSH_KEY }}
           EC2_USER: Administrator
           EC2_HOST: 65.1.248.103
         run: |
-          # Save the private key and set permissions
+          # Save SSH private key
           echo "$PRIVATE_KEY" > private_key.pem
           chmod 600 private_key.pem
 
-          # Transfer build files to Windows EC2 IIS directory
-          scp -v -o StrictHostKeyChecking=no -i private_key.pem -r dist/* $EC2_USER@$EC2_HOST:"C:/inetpub/wwwroot/angular-app"
+          # Compress Angular build into a zip file
+          cd dist
+          zip -r angular-app.zip angular-app
+          cd ..
 
-          # Remotely restart IIS using PowerShell
-          ssh -v -o StrictHostKeyChecking=no -i private_key.pem $EC2_USER@$EC2_HOST "powershell.exe -Command 'iisreset'"
+          # Upload the zip file to EC2
+          scp -v -o StrictHostKeyChecking=no -i private_key.pem dist/angular-app.zip $EC2_USER@$EC2_HOST:C:/angular-app.zip
+
+          # Remotely backup existing site and deploy new build
+          ssh -v -o StrictHostKeyChecking=no -i private_key.pem $EC2_USER@$EC2_HOST "powershell.exe -Command \"
+            \$timestamp = Get-Date -Format yyyyMMdd_HHmmss;
+            \$backupPath = 'C:\\inetpub\\wwwroot\\angular-app_backup_' + \$timestamp;
+            if (Test-Path 'C:\\inetpub\\wwwroot\\angular-app') {
+              Rename-Item 'C:\\inetpub\\wwwroot\\angular-app' \$backupPath
+            }
+            Expand-Archive -Path 'C:\\angular-app.zip' -DestinationPath 'C:\\inetpub\\wwwroot' -Force;
+            Remove-Item 'C:\\angular-app.zip';
+            iisreset;
+          \""
