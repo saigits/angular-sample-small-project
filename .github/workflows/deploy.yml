@@ -3,7 +3,7 @@ name: Deploy Angular App to Windows EC2 via IIS
 on:
   push:
     branches:
-      - main  # Triggers deployment on push to main branch
+      - main
 
 jobs:
   deploy:
@@ -34,15 +34,17 @@ jobs:
           echo "$PRIVATE_KEY" > private_key.pem
           chmod 600 private_key.pem
 
-          # Compress Angular build into a zip file
-          cd dist
-          zip -r angular-app.zip angular-app
-          cd ..
+          # Find actual Angular build folder inside dist/
+          BUILD_DIR=$(find dist -maxdepth 1 -mindepth 1 -type d | head -n 1)
+          echo "Detected build folder: $BUILD_DIR"
+
+          # Zip the build folder
+          zip -r angular-app.zip "$BUILD_DIR"
 
           # Upload the zip file to EC2
-          scp -v -o StrictHostKeyChecking=no -i private_key.pem dist/angular-app.zip $EC2_USER@$EC2_HOST:C:/angular-app.zip
+          scp -v -o StrictHostKeyChecking=no -i private_key.pem angular-app.zip $EC2_USER@$EC2_HOST:C:/angular-app.zip
 
-          # Remotely backup existing site and deploy new build
+          # Remotely backup and deploy
           ssh -v -o StrictHostKeyChecking=no -i private_key.pem $EC2_USER@$EC2_HOST "powershell.exe -Command \"
             \$timestamp = Get-Date -Format yyyyMMdd_HHmmss;
             \$backupPath = 'C:\\inetpub\\wwwroot\\angular-app_backup_' + \$timestamp;
