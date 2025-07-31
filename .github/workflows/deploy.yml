@@ -35,10 +35,10 @@ jobs:
           chmod 600 private_key.pem
 
           # Copy the build files to the IIS directory on the EC2 instance
-          scp -o StrictHostKeyChecking=no -i private_key.pem -r dist/* $EC2_USER@$EC2_HOST:C:/inetpub/wwwroot/angular-app
+          scp -v -o StrictHostKeyChecking=no -i private_key.pem -r dist/* $EC2_USER@$EC2_HOST:C:/inetpub/wwwroot/angular-app
 
           # SSH into the EC2 instance and restart IIS
-          ssh -o StrictHostKeyChecking=no -i private_key.pem $EC2_USER@$EC2_HOST << 'EOF'
+          ssh -v -o StrictHostKeyChecking=no -i private_key.pem $EC2_USER@$EC2_HOST << 'EOF'
             # Restart IIS to apply the changes
             iisreset
           EOF
