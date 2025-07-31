@@ -3,7 +3,7 @@ name: Deploy Angular App to Windows EC2 via IIS
 on:
   push:
     branches:
-      - main
+      - main  # Deploy on push to main branch
 
 jobs:
   deploy:
@@ -24,28 +24,40 @@ jobs:
       - name: Build Angular project
         run: npm run build --prod
 
-      - name: Deploy to EC2 (Windows + IIS)
+      - name: Detect build folder
+        id: detect_build
+        run: |
+          # Angular default output folder is dist/<project-name>
+          BUILD_DIR=$(ls -d dist/* | head -n 1)
+          echo "BUILD_DIR=$BUILD_DIR" >> $GITHUB_OUTPUT
+
+      - name: Zip build folder
+        run: |
+          zip -r angular-app.zip ${{ steps.detect_build.outputs.BUILD_DIR }}
+
+      - name: Deploy to EC2 IIS with backup and restart
         env:
           PRIVATE_KEY: ${{ secrets.EC2_SSH_KEY }}
           EC2_USER: Administrator
           EC2_HOST: 65.1.248.103
         run: |
-          # Save SSH private key
           echo "$PRIVATE_KEY" > private_key.pem
           chmod 600 private_key.pem
 
-          # Find actual Angular build folder inside dist/
-          BUILD_DIR=$(find dist -maxdepth 1 -mindepth 1 -type d | head -n 1)
-          echo "Detected build folder: $BUILD_DIR"
+          # Retry upload via SFTP
+          n=0
+          until [ $n -ge 3 ]
+          do
+            sftp -o BatchMode=yes -o StrictHostKeyChecking=no -i private_key.pem $EC2_USER@$EC2_HOST << EOF && break
+put angular-app.zip C:/angular-app.zip
+EOF
+            n=$((n+1))
+            echo "Retry upload attempt $n"
+            sleep 2
+          done
 
-          # Zip the build folder
-          zip -r angular-app.zip "$BUILD_DIR"
-
-          # Upload the zip file to EC2
-          scp -v -o StrictHostKeyChecking=no -i private_key.pem angular-app.zip $EC2_USER@$EC2_HOST:C:/angular-app.zip
-
-          # Remotely backup and deploy
-          ssh -v -o StrictHostKeyChecking=no -i private_key.pem $EC2_USER@$EC2_HOST "powershell.exe -Command \"
+          # SSH to Windows EC2: backup old app, extract new app, cleanup, restart IIS
+          ssh -o StrictHostKeyChecking=no -i private_key.pem $EC2_USER@$EC2_HOST powershell.exe -Command "
             \$timestamp = Get-Date -Format yyyyMMdd_HHmmss;
             \$backupPath = 'C:\\inetpub\\wwwroot\\angular-app_backup_' + \$timestamp;
             if (Test-Path 'C:\\inetpub\\wwwroot\\angular-app') {
@@ -54,4 +66,4 @@ jobs:
             Expand-Archive -Path 'C:\\angular-app.zip' -DestinationPath 'C:\\inetpub\\wwwroot' -Force;
             Remove-Item 'C:\\angular-app.zip';
             iisreset;
-          \""
+          "
