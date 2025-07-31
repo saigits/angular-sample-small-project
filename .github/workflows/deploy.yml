@@ -24,13 +24,7 @@ jobs:
       - name: Build Angular project
         run: npm run build --prod
 
-      - name: Zip build output
-        run: |
-          cd dist
-          zip -r ../../angular-app.zip ./angular-sample-small-project
-          cd ..
-
-      - name: Deploy to EC2 IIS with backup and restart
+      - name: Deploy to EC2 (IIS)
         env:
           PRIVATE_KEY: ${{ secrets.EC2_SSH_KEY }}
           EC2_USER: Administrator
@@ -39,17 +33,8 @@ jobs:
           echo "$PRIVATE_KEY" > private_key.pem
           chmod 600 private_key.pem
 
-          # Upload the zip file to EC2
-          scp -o StrictHostKeyChecking=no -i private_key.pem angular-app.zip $EC2_USER@$EC2_HOST:C:/angular-app.zip
+          # Copy build folder contents to IIS folder on EC2
+          scp -o StrictHostKeyChecking=no -i private_key.pem -r dist/angular-sample-small-project/* $EC2_USER@$EC2_HOST:"C:/inetpub/wwwroot/angular-sample-small-project/"
 
-          # SSH into EC2 and run PowerShell commands to backup, extract, delete zip and restart IIS
-          ssh -o StrictHostKeyChecking=no -i private_key.pem $EC2_USER@$EC2_HOST powershell.exe -NoProfile -Command "
-            \$timestamp = Get-Date -Format yyyyMMdd_HHmmss;
-            \$backupPath = 'C:\\inetpub\\wwwroot\\angular-app_backup_' + \$timestamp;
-            if (Test-Path 'C:\\inetpub\\wwwroot\\angular-sample-small-project') {
-              Rename-Item 'C:\\inetpub\\wwwroot\\angular-sample-small-project' \$backupPath;
-            }
-            Expand-Archive -Path 'C:\\angular-app.zip' -DestinationPath 'C:\\inetpub\\wwwroot' -Force;
-            Remove-Item 'C:\\angular-app.zip';
-            iisreset;
-          "
+          # Restart IIS on EC2
+          ssh -o StrictHostKeyChecking=no -i private_key.pem $EC2_USER@$EC2_HOST powershell.exe -Command "iisreset"
