@@ -13,7 +13,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v2
 
-      - name: Set up Node.js
+      - name: Setup Node.js
         uses: actions/setup-node@v2
         with:
           node-version: '18.x'
@@ -24,18 +24,11 @@ jobs:
       - name: Build Angular project
         run: npm run build --prod
 
-      - name: Detect build folder
-        id: detect_build
+      - name: Zip build output
         run: |
-          set -x
-          BUILD_DIR=$(ls -d dist/* | head -n 1)
-          echo "Detected build folder: $BUILD_DIR"
-          echo "BUILD_DIR=$BUILD_DIR" >> $GITHUB_OUTPUT
-
-      - name: Zip build folder
-        run: |
-          set -x
-          zip -r angular-app.zip "${{ steps.detect_build.outputs.BUILD_DIR }}"
+          cd dist
+          zip -r ../../angular-app.zip ./angular-sample-small-project
+          cd ..
 
       - name: Deploy to EC2 IIS with backup and restart
         env:
@@ -43,22 +36,20 @@ jobs:
           EC2_USER: Administrator
           EC2_HOST: 65.1.248.103
         run: |
-          set -x
           echo "$PRIVATE_KEY" > private_key.pem
           chmod 600 private_key.pem
 
-          echo "Uploading zip file via SFTP with retry"
-          n=0
-          until [ $n -ge 3 ]
-          do
-            sftp -vvv -o BatchMode=yes -o StrictHostKeyChecking=no -i private_key.pem $EC2_USER@$EC2_HOST << EOF && break
-put angular-app.zip C:/angular-app.zip
-EOF
-            n=$((n+1))
-            echo "Retry upload attempt $n"
-            sleep 2
-          done
+          # Upload the zip file to EC2
+          scp -o StrictHostKeyChecking=no -i private_key.pem angular-app.zip $EC2_USER@$EC2_HOST:C:/angular-app.zip
 
-          echo "Running remote commands on Windows EC2"
-          ssh -vvv -o StrictHostKeyChecking=no -i private_key.pem $EC2_USER@$EC2_HOST powershell.exe -NoProfile -Command @"
-            Write-Output '
+          # SSH into EC2 and run PowerShell commands to backup, extract, delete zip and restart IIS
+          ssh -o StrictHostKeyChecking=no -i private_key.pem $EC2_USER@$EC2_HOST powershell.exe -NoProfile -Command "
+            \$timestamp = Get-Date -Format yyyyMMdd_HHmmss;
+            \$backupPath = 'C:\\inetpub\\wwwroot\\angular-app_backup_' + \$timestamp;
+            if (Test-Path 'C:\\inetpub\\wwwroot\\angular-sample-small-project') {
+              Rename-Item 'C:\\inetpub\\wwwroot\\angular-sample-small-project' \$backupPath;
+            }
+            Expand-Archive -Path 'C:\\angular-app.zip' -DestinationPath 'C:\\inetpub\\wwwroot' -Force;
+            Remove-Item 'C:\\angular-app.zip';
+            iisreset;
+          "
