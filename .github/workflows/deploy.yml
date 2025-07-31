@@ -1,0 +1,44 @@
+name: Deploy Angular App to Windows EC2 via IIS
+
+on:
+  push:
+    branches:
+      - main  # This will trigger the workflow when changes are pushed to the `main` branch
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest  # GitHub Actions uses Ubuntu to run workflows
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2  # Checks out the repository code
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v2
+        with:
+          node-version: '16'  # Ensure the correct Node.js version (replace if needed)
+
+      - name: Install dependencies
+        run: npm install  # Install the npm dependencies
+
+      - name: Build Angular project
+        run: npm run build --prod  # Builds the Angular project for production
+
+      - name: Deploy to EC2 (IIS)
+        env:
+          PRIVATE_KEY: ${{ secrets.EC2_SSH_KEY }}  # GitHub Secrets: Private SSH Key
+          EC2_USER: Administrator  # EC2 username (Administrator in your case)
+          EC2_HOST: 65.1.248.103  # Replace with your EC2 instance's public IP
+        run: |
+          # Save the private key to a file and set the correct permissions
+          echo "$PRIVATE_KEY" > private_key.pem
+          chmod 600 private_key.pem
+
+          # Copy the build files to the IIS directory on the EC2 instance
+          scp -o StrictHostKeyChecking=no -i private_key.pem -r dist/* $EC2_USER@$EC2_HOST:C:/inetpub/wwwroot/angular-app
+
+          # SSH into the EC2 instance and restart IIS
+          ssh -o StrictHostKeyChecking=no -i private_key.pem $EC2_USER@$EC2_HOST << 'EOF'
+            # Restart IIS to apply the changes
+            iisreset
+          EOF
